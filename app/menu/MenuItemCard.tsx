@@ -23,7 +23,7 @@ export function MenuItemCard({ item, currency }: MenuItemCardProps) {
 
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [variant, setVariant] = React.useState<PublicMenuVariant | null>(
-    item.variants?.[0] ?? null
+    item.variants?.[0] ?? null,
   );
   const [quantity, setQuantity] = React.useState(1);
 
@@ -32,36 +32,68 @@ export function MenuItemCard({ item, currency }: MenuItemCardProps) {
   >({});
 
   const groups = item.modifier_groups ?? [];
-  const price = variant ? variant.price : item.base_price;
-  const displayName = item.name_en || item.name_ar;
+  const displayName = item.name_en || item.name_ar || "Item";
   const nameAr = item.name_ar;
   const nameEn = item.name_en;
+
+  const basePrice = variant ? variant.price : item.base_price;
 
   const selectedCountForGroup = (groupId: string) =>
     (modifierSelections[groupId] ?? []).reduce((s, x) => s + x.qty, 0);
 
   const isModifierSelected = (groupId: string, modId: string) =>
     (modifierSelections[groupId] ?? []).some(
-      (x) => String(x.modifier.id) === String(modId)
+      (x) => String(x.modifier.id) === String(modId),
     );
 
   const toggleModifier = (
     group: PublicMenuModifierGroupRule,
-    mod: PublicMenuModifier
+    mod: PublicMenuModifier,
   ) => {
     const key = String(group.group.id);
     const list = modifierSelections[key] ?? [];
     const idx = list.findIndex((x) => String(x.modifier.id) === String(mod.id));
     const max = group.rule.max_select;
+
     let next: { modifier: PublicMenuModifier; qty: number }[];
+
     if (idx >= 0) {
+      // remove
       next = list.filter((_, i) => i !== idx);
     } else {
       const total = list.reduce((s, x) => s + x.qty, 0);
       if (total >= max) return;
       next = [...list, { modifier: mod, qty: 1 }];
     }
+
     setModifierSelections((prev) => ({ ...prev, [key]: next }));
+  };
+
+  const bumpModifierQty = (
+    group: PublicMenuModifierGroupRule,
+    mod: PublicMenuModifier,
+    delta: number,
+  ) => {
+    const key = String(group.group.id);
+    const list = modifierSelections[key] ?? [];
+    const idx = list.findIndex((x) => String(x.modifier.id) === String(mod.id));
+    const max = group.rule.max_select;
+
+    if (idx < 0) return;
+
+    const currentTotal = list.reduce((s, x) => s + x.qty, 0);
+    const nextList = [...list];
+    const nextQty = nextList[idx].qty + delta;
+
+    if (nextQty <= 0) {
+      nextList.splice(idx, 1);
+    } else {
+      // if increasing, respect group max total qty
+      if (delta > 0 && currentTotal >= max) return;
+      nextList[idx] = { ...nextList[idx], qty: nextQty };
+    }
+
+    setModifierSelections((prev) => ({ ...prev, [key]: nextList }));
   };
 
   const valid = groups.every((g) => {
@@ -81,19 +113,35 @@ export function MenuItemCard({ item, currency }: MenuItemCardProps) {
     setModifierSelections({});
   };
 
+  const modifiersUnitTotal = React.useMemo(() => {
+    let sum = 0;
+    for (const g of groups) {
+      const gid = String(g.group.id);
+      for (const s of modifierSelections[gid] ?? []) {
+        sum += (s.modifier.price || 0) * s.qty;
+      }
+    }
+    return sum;
+  }, [groups, modifierSelections]);
+
+  const unitTotal = basePrice + modifiersUnitTotal;
+  const total = unitTotal * quantity;
+
   const handleAdd = () => {
     const selectedModifiers = groups.flatMap((g) =>
       (modifierSelections[String(g.group.id)] ?? []).map((s) => ({
         modifier: s.modifier,
         quantity: s.qty,
-      }))
+      })),
     );
+
     addItem({
       item,
       variant: variant ?? null,
       quantity,
       selectedModifiers,
     });
+
     setDetailsOpen(false);
     resetState();
   };
@@ -102,13 +150,19 @@ export function MenuItemCard({ item, currency }: MenuItemCardProps) {
   const handleQuickOrder = (e: React.MouseEvent) => {
     e.stopPropagation();
     const defaultVariant = item.variants?.[0] ?? null;
-    const defaultModifiers: Array<{ modifier: PublicMenuModifier; quantity: number }> = [];
+
+    const defaultModifiers: Array<{
+      modifier: PublicMenuModifier;
+      quantity: number;
+    }> = [];
+
     for (const g of groups) {
       const min = g.rule.min_select;
       for (let i = 0; i < min && g.modifiers[i]; i++) {
         defaultModifiers.push({ modifier: g.modifiers[i], quantity: 1 });
       }
     }
+
     addItem({
       item,
       variant: defaultVariant,
@@ -121,209 +175,199 @@ export function MenuItemCard({ item, currency }: MenuItemCardProps) {
 
   return (
     <>
-      {/* Card: orange tint, image placeholder, name + price, Quick order + See details (blue) */}
-      <div className="flex overflow-hidden rounded-2xl border-2 border-[#e85d04]/30 bg-[#ffedd5]/80 shadow-sm p-3 sm:p-4">
-        <div className="flex flex-1 justify-between items-center gap-3  ">
-          <div className="flex  h-16 w-16 shrink-0 sm:h-20 sm:w-20 ">
-            <div className="flex h-full w-full items-center justify-center rounded-full bg-white shadow-inner">
-              <span className="text-2xl font-bold text-[#6b6560] sm:text-3xl">
-                {(displayName || "?").charAt(0).toUpperCase()}
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold leading-tight text-[#2d2a26]">
-              {nameEn && nameAr ? (
-                <>
-                  {nameEn} <span className="text-[#6b6560]">/ {nameAr}</span>
-                </>
-              ) : (
-                displayName
-              )}
-            </p>
-            <p className="mt-1 font-bold text-[#e85d04]">
-              {price.toFixed(2)} {currency}
-            </p>
-          </div>
+      {/* Talabat/8 Orders style – white card, image placeholder, Add */}
+      <div className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm border border-gray-100">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">
+          <span className="text-xl font-bold text-gray-400">
+            {displayName.charAt(0).toUpperCase()}
+          </span>
         </div>
-            <div className="flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={handleQuickOrder}
-                disabled={!canQuickOrder}
-                className="bg-[#0d5c63] w-full rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:opacity-50 sm:text-sm"
-              >
-                Quick order
-              </button>
-              <button
-                type="button"
-                onClick={() => setDetailsOpen(true)}
-                className="bg-[#0d5c63] w-full rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wide sm:text-sm"
-              >
-                See details
-              </button>
-            </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gray-900 truncate">
+            {nameEn && nameAr ? (
+              <>
+                {nameEn}
+                <span className="text-gray-500 font-normal"> · {nameAr}</span>
+              </>
+            ) : (
+              displayName
+            )}
+          </p>
+          <p className="text-sm font-bold text-orange-500 mt-0.5">
+            {basePrice.toFixed(2)} {currency}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setDetailsOpen(true)}
+          className="h-9 shrink-0 rounded-lg bg-orange-500 px-4 text-sm font-semibold text-white hover:bg-orange-600 active:scale-[0.98]"
+        >
+          Add
+        </button>
       </div>
 
-      {/* See details modal / bottom sheet */}
+      {/* Details modal – white bottom sheet (Talabat style) */}
       {detailsOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+  <div
+    className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+    onClick={() => {
+      setDetailsOpen(false);
+      resetState();
+    }}
+  >
+    <div
+      className="relative w-full max-w-xl rounded-t-3xl bg-white shadow-2xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header (small) */}
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold text-zinc-900">
+            {displayName}
+          </p>
+          <p className="text-xs font-bold text-orange-500">
+            {unitTotal.toFixed(2)} {currency}
+          </p>
+        </div>
+
+        <button
+          type="button"
           onClick={() => {
             setDetailsOpen(false);
             resetState();
           }}
+          className="rounded-full p-2 text-zinc-600 hover:bg-zinc-100"
+          aria-label="Close"
         >
-          <div
-            className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h3 className="text-xl font-bold text-[#2d2a26]">
-                    {displayName}
-                  </h3>
-                  <p className="mt-1 text-lg font-bold text-[#e85d04]">
-                    {price.toFixed(2)} {currency}
-                  </p>
-                  {firstInvalid && (
-                    <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-                      Please choose{" "}
-                      {firstInvalid.group.name_en || firstInvalid.group.name_ar}{" "}
-                      ({firstInvalid.rule.min_select}–{firstInvalid.rule.max_select})
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetailsOpen(false);
-                    resetState();
-                  }}
-                  className="rounded-full p-2 text-[#6b6560] hover:bg-zinc-100"
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-            <div className="p-6">
-              {item.variants && item.variants.length > 0 && (
-                <div className="mb-6">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-wider text-[#6b6560]">
-                    Variants
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {item.variants.map((v) => {
-                      const active = String(variant?.id) === String(v.id);
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => setVariant(v)}
-                        className={`flex items-center justify-between rounded-xl border-2 px-4 py-3 text-sm font-semibold ${
-                          active
-                            ? "border-[#e85d04] bg-[#ffedd5] text-[#e85d04]"
-                            : "border-zinc-200 text-[#2d2a26] hover:border-[#e85d04]/50"
-                        }`}
-                        >
-                          <span>{v.name_en || v.name_ar}</span>
-                          <span className="text-[#6b6560]">
-                            {v.price.toFixed(2)} {currency}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+      {/* Body (simple) */}
+      <div className="max-h-[62vh] overflow-y-auto px-4 py-4 pb-24">
+        {firstInvalid ? (
+          <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+            Choose {firstInvalid.group.name_en || firstInvalid.group.name_ar} (
+            {firstInvalid.rule.min_select}–{firstInvalid.rule.max_select})
+          </div>
+        ) : null}
 
-              {groups.map((g) => {
-                const gid = String(g.group.id);
-                const count = selectedCountForGroup(gid);
-                const min = g.rule.min_select;
-                const max = g.rule.max_select;
-                const ok = count >= min && count <= max;
+        {/* Variants as chips */}
+        {item.variants && item.variants.length > 0 && (
+          <div className="mb-5">
+            <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-zinc-500">
+              Variants
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {item.variants.map((v) => {
+                const active = String(variant?.id) === String(v.id);
                 return (
-                  <div key={gid} className="mb-6">
-                    <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-wider text-[#6b6560]">
-                      {g.group.name_en || g.group.name_ar} (choose {min}–{max})
-                    </p>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {count}/{max}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {g.modifiers.map((m) => {
-                        const selected = isModifierSelected(gid, String(m.id));
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => toggleModifier(g, m)}
-                            className={`inline-flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-semibold ${
-                              selected
-                                ? "border-[#e85d04] bg-[#ffedd5] text-[#e85d04]"
-                                : "border-zinc-200 text-[#2d2a26] hover:border-[#e85d04]/50"
-                            }`}
-                          >
-                            {selected ? <Check className="h-4 w-4" /> : null}
-                            <span>{m.name_en || m.name_ar}</span>
-                            {m.price > 0 && (
-                              <span className="text-xs text-[#6b6560]">
-                                +{m.price.toFixed(2)}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setVariant(v)}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold ${
+                      active
+                        ? "border-orange-500 bg-orange-50 text-orange-600"
+                        : "border-gray-200 bg-white text-gray-800"
+                    }`}
+                  >
+                    {v.name_en || v.name_ar} • {v.price.toFixed(2)}
+                  </button>
                 );
               })}
-
-              <div className="sticky bottom-0 -mx-6 mt-6 border-t border-zinc-200 bg-white px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-1 rounded-xl border-2 border-zinc-200">
-                    <button
-                      type="button"
-                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      className="flex h-11 w-11 items-center justify-center text-[#6b6560] hover:bg-zinc-50"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </button>
-                    <span className="w-12 text-center text-lg font-bold text-[#2d2a26]">
-                      {quantity}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setQuantity((q) => Math.min(99, q + 1))}
-                      className="flex h-11 w-11 items-center justify-center text-[#6b6560] hover:bg-zinc-50"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAdd}
-                    disabled={!valid}
-                    className="menu-btn-orange rounded-xl px-6 py-3 font-bold uppercase tracking-wide disabled:opacity-50"
-                  >
-                    Add to cart
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
+        )}
+
+        {/* Modifiers as chips (tap select/unselect) */}
+        {groups.map((g) => {
+          const gid = String(g.group.id);
+          const count = selectedCountForGroup(gid);
+          const min = g.rule.min_select;
+          const max = g.rule.max_select;
+
+          return (
+            <div key={gid} className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-500">
+                  {g.group.name_en || g.group.name_ar} ({min}–{max})
+                </p>
+                <span className="text-[11px] font-extrabold text-zinc-500">
+                  {count}/{max}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {g.modifiers.map((m) => {
+                  const selected = isModifierSelected(gid, String(m.id));
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => toggleModifier(g, m)}
+                      className={`rounded-full border px-3 py-2 text-xs font-semibold ${
+                        selected
+                          ? "border-orange-500 bg-orange-50 text-orange-600"
+                          : "border-gray-200 bg-white text-gray-800"
+                      }`}
+                    >
+                      {m.name_en || m.name_ar}
+                      {m.price > 0 ? ` +${m.price.toFixed(2)}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Bottom bar (compact) */}
+      <div className="absolute bottom-0 left-0 right-0 border-t border-zinc-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center overflow-hidden rounded-xl border border-zinc-200">
+            <button
+              type="button"
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              className="flex h-9 w-9 items-center justify-center text-zinc-700 hover:bg-zinc-50"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <span className="w-10 text-center text-sm font-extrabold text-zinc-900">
+              {quantity}
+            </span>
+            <button
+              type="button"
+              onClick={() => setQuantity((q) => Math.min(99, q + 1))}
+              className="flex h-9 w-9 items-center justify-center text-zinc-700 hover:bg-zinc-50"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-w-0 text-right">
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-500">
+              Total
+            </p>
+            <p className="text-sm font-bold text-orange-500">
+              {total.toFixed(2)} {currency}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!valid}
+            className="h-10 rounded-xl bg-orange-500 px-4 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+          >
+            Add
+          </button>
         </div>
-      )}
+      </div>
+    </div>
+  </div>
+)}
     </>
   );
 }

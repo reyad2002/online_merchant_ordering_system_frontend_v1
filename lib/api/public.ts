@@ -17,7 +17,7 @@ export async function fetchPublicMenu(
     { params }
   );
   return data;
-}
+} 
 
 export interface ValidateCartResult {
   is_valid: boolean;
