@@ -4,19 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts";
 import {
-  fetchMenus,
-  fetchMenuCategories,
-  fetchItem,
-  updateItem,
-  updateItemStatus,
-  fetchItemVariants,
-  createVariant,
-  updateVariant,
-  deleteVariant,
-  fetchItemModifierGroups,
-  attachModifierGroup,
-  updateItemModifierGroup,
-  detachModifierGroup,
+  fetchMenus, fetchMenuCategories, fetchItem, updateItem, updateItemStatus,
+  fetchItemVariants, createVariant, updateVariant, deleteVariant,
+  fetchItemModifierGroups, attachModifierGroup, updateItemModifierGroup, detachModifierGroup,
   getApiError,
 } from "@/lib/api";
 import { fetchModifierGroups } from "@/lib/api/modifiers";
@@ -24,321 +14,251 @@ import type { ItemDto, ItemVariantDto, ItemModifierGroupLinkDto } from "@/lib/ap
 import type { ModifierGroupDto } from "@/lib/api/modifiers";
 import { useForm } from "react-hook-form";
 import {
-  Loader2,
-  Plus,
-  Trash2,
-  Package,
-  ChevronRight,
+  Loader2, Plus, Trash2, Package, ChevronRight,
+  Pencil, Check, X, Layers, Tag, DollarSign, Settings2,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-const canEditMenu = (role: string) => role === "owner" || role === "manager";
+const canEdit = (role: string) => role === "owner" || role === "manager";
+
+const statusBadge: Record<string, string> = {
+  active:       "badge badge-success",
+  hidden:       "badge badge-neutral",
+  out_of_stock: "badge badge-error",
+};
 
 export default function ItemDetailPage() {
   const params = useParams();
-  const menuId = params?.menuId as string;
+  const menuId    = params?.menuId as string;
   const categoryId = params?.categoryId as string;
-  const itemId = params?.itemId as string;
+  const itemId    = params?.itemId as string;
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [editForm, setEditForm] = useState(false);
   const [addVariant, setAddVariant] = useState(false);
-  const [addModifierGroup, setAddModifierGroup] = useState(false);
-  const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [addModGrp, setAddModGrp] = useState(false);
+  const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  const { data: menus } = useQuery({
-    queryKey: ["menus", user?.merchant_id],
-    queryFn: fetchMenus,
-    enabled: !!user?.merchant_id,
-  });
+  const showToast = (type: "ok" | "err", text: string) => {
+    setToast({ type, text }); setTimeout(() => setToast(null), 3500);
+  };
 
-  const { data: categories } = useQuery({
-    queryKey: ["menuCategories", menuId],
-    queryFn: () => fetchMenuCategories(menuId),
-    enabled: !!menuId,
-  });
-
-  const { data: item, isLoading, error } = useQuery({
-    queryKey: ["item", itemId],
-    queryFn: () => fetchItem(itemId),
-    enabled: !!itemId,
-  });
-
-  const { data: itemModifierGroupLinks } = useQuery({
-    queryKey: ["itemModifierGroups", itemId],
-    queryFn: () => fetchItemModifierGroups(itemId),
-    enabled: !!itemId,
-  });
-
-  const { data: modifierGroups } = useQuery({
-    queryKey: ["modifierGroups"],
-    queryFn: fetchModifierGroups,
-    enabled: !!user?.merchant_id,
-  });
+  const { data: menus } = useQuery({ queryKey: ["menus", user?.merchant_id], queryFn: fetchMenus, enabled: !!user?.merchant_id });
+  const { data: categories } = useQuery({ queryKey: ["menuCategories", menuId], queryFn: () => fetchMenuCategories(menuId), enabled: !!menuId });
+  const { data: item, isLoading, error } = useQuery({ queryKey: ["item", itemId], queryFn: () => fetchItem(itemId), enabled: !!itemId });
+  const { data: links } = useQuery({ queryKey: ["itemModifierGroups", itemId], queryFn: () => fetchItemModifierGroups(itemId), enabled: !!itemId });
+  const { data: allGroups } = useQuery({ queryKey: ["modifierGroups"], queryFn: fetchModifierGroups, enabled: !!user?.merchant_id });
 
   const menu = menus?.find((m) => m.id === menuId);
   const category = categories?.find((c) => c.id === categoryId);
   const menuName = menu?.name_en ?? menu?.name_ar ?? "Menu";
   const categoryName = category?.name_en ?? category?.name_ar ?? "Category";
-  const editable = canEditMenu(user?.role ?? "");
+  const editable = canEdit(user?.role ?? "");
 
-  if (isLoading || !item) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-lg bg-red-50 p-4 text-red-700">
-        {getApiError(error)}
-      </div>
-    );
-  }
+  if (isLoading || !item) return (
+    <div className="flex items-center justify-center py-24">
+      <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+    </div>
+  );
+  if (error) return <div className="alert-error">{getApiError(error)}</div>;
 
   return (
-    <div>
-      <nav className="mb-4 flex items-center gap-1 text-sm text-zinc-500">
-        <Link href="/dashboard/menu" className="hover:text-teal-600">
-          Menus
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <Link href={`/dashboard/menu/${menuId}`} className="hover:text-teal-600">
-          {menuName}
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <Link href={`/dashboard/menu/${menuId}/${categoryId}`} className="hover:text-teal-600">
-          {categoryName}
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-medium text-zinc-800">{item.name_en ?? item.name_ar ?? "Item"}</span>
-      </nav>
-
-      <h1 className="mb-6 flex items-center gap-2 text-2xl font-semibold text-zinc-800">
-        <Package className="h-7 w-7 text-teal-600" />
-        {item.name_en ?? item.name_ar ?? item.id}
-      </h1>
-
-      {message && (
-        <div
-          className={`mb-4 rounded-lg px-3 py-2 text-sm ${
-            message.type === "ok" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
-          }`}
-        >
-          {message.text}
+    <div className="space-y-5">
+      {toast && (
+        <div className={`fixed top-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3 shadow-lg text-sm font-medium ${toast.type === "ok" ? "bg-emerald-600 text-white" : "bg-red-600 text-white"}`}>
+          {toast.type === "ok" ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+          {toast.text}
         </div>
       )}
 
-      <ItemEditSection
-        item={item}
-        editable={editable}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["item", itemId] });
-          setMessage({ type: "ok", text: "Item updated." });
-        }}
-        onError={(err) => setMessage({ type: "err", text: getApiError(err) })}
-        editForm={editForm}
-        setEditForm={setEditForm}
-      />
+      {/* Breadcrumb + title */}
+      <div>
+        <nav className="breadcrumb mb-1.5">
+          <Link href="/dashboard/menu" className="hover:text-teal-600">Menus</Link>
+          <span className="breadcrumb-sep">/</span>
+          <Link href={`/dashboard/menu/${menuId}`} className="hover:text-teal-600">{menuName}</Link>
+          <span className="breadcrumb-sep">/</span>
+          <Link href={`/dashboard/menu/${menuId}/${categoryId}`} className="hover:text-teal-600">{categoryName}</Link>
+          <span className="breadcrumb-sep">/</span>
+          <span className="font-medium text-slate-700">{item.name_en ?? item.name_ar ?? "Item"}</span>
+        </nav>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-100">
+            <Package className="h-5 w-5 text-teal-600" />
+          </div>
+          <h1 className="page-title">{item.name_en ?? item.name_ar ?? item.id}</h1>
+        </div>
+      </div>
 
-      <VariantsSection
+      {/* ── Item info card ── */}
+      <div className="form-card">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-slate-400" />
+            <h2 className="section-title">Item details</h2>
+          </div>
+          {editable && !editForm && (
+            <button type="button" onClick={() => setEditForm(true)} className="btn-secondary btn-sm">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+          )}
+        </div>
+
+        {!editForm ? (
+          /* Read view */
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs font-medium text-slate-500 mb-1">Name (EN)</p>
+              <p className="font-semibold text-slate-800">{item.name_en ?? "—"}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs font-medium text-slate-500 mb-1">Name (AR)</p>
+              <p className="font-semibold text-slate-800" dir="rtl">{item.name_ar ?? "—"}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs font-medium text-slate-500 mb-1">Base price</p>
+              <p className="flex items-center gap-1 font-bold text-teal-700">
+                <DollarSign className="h-4 w-4" />
+                {item.base_price.toFixed(2)} EGP
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3 sm:col-span-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">Status</p>
+                <span className={statusBadge[item.status] ?? "badge badge-neutral"}>
+                  {item.status.replace("_", " ")}
+                </span>
+              </div>
+              {editable && (
+                <ItemStatusButtons item={item} onToast={showToast} queryClient={queryClient} />
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Edit form */
+          <ItemEditForm
+            item={item}
+            onSave={() => { queryClient.invalidateQueries({ queryKey: ["item", itemId] }); setEditForm(false); showToast("ok", "Item updated."); }}
+            onCancel={() => setEditForm(false)}
+            onError={(e) => showToast("err", getApiError(e))}
+          />
+        )}
+      </div>
+
+      {/* ── Variants card ── */}
+      <VariantsCard
         itemId={itemId}
         editable={editable}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["item", itemId] });
-          setMessage({ type: "ok", text: "Variant saved." });
-        }}
-        onError={(err) => setMessage({ type: "err", text: getApiError(err) })}
         addVariant={addVariant}
         setAddVariant={setAddVariant}
+        onToast={showToast}
       />
 
-      <ItemModifierGroupsSection
+      {/* ── Modifier groups card ── */}
+      <ModifierGroupsCard
         itemId={itemId}
-        itemModifierGroups={itemModifierGroupLinks ?? []}
+        links={links ?? []}
+        allGroups={allGroups ?? []}
         editable={editable}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["item", itemId] });
-          queryClient.invalidateQueries({ queryKey: ["itemModifierGroups", itemId] });
-          setMessage({ type: "ok", text: "Modifier group updated." });
-        }}
-        onError={(err) => setMessage({ type: "err", text: getApiError(err) })}
-        addModifierGroup={addModifierGroup}
-        setAddModifierGroup={setAddModifierGroup}
-        modifierGroups={modifierGroups ?? []}
+        addModGrp={addModGrp}
+        setAddModGrp={setAddModGrp}
+        onToast={showToast}
       />
     </div>
   );
 }
 
-/* ─── Item edit ─── */
+/* ─── Quick status buttons ─── */
+function ItemStatusButtons({ item, onToast, queryClient }: { item: ItemDto; onToast: (t: "ok"|"err", m: string) => void; queryClient: ReturnType<typeof useQueryClient> }) {
+  const mut = useMutation({
+    mutationFn: (status: "active" | "hidden" | "out_of_stock") => updateItemStatus(item.id, status),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["item", item.id] }); onToast("ok", "Status updated."); },
+    onError: (e) => onToast("err", getApiError(e)),
+  });
+  return (
+    <div className="flex flex-wrap gap-2">
+      {item.status !== "active" && (
+        <button type="button" onClick={() => mut.mutate("active")} disabled={mut.isPending}
+          className="btn-primary btn-sm">
+          Set active
+        </button>
+      )}
+      {item.status === "active" && (
+        <button type="button" onClick={() => mut.mutate("out_of_stock")} disabled={mut.isPending}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50">
+          Out of stock
+        </button>
+      )}
+      {item.status !== "hidden" && (
+        <button type="button" onClick={() => mut.mutate("hidden")} disabled={mut.isPending}
+          className="btn-secondary btn-sm">
+          Hide
+        </button>
+      )}
+    </div>
+  );
+}
 
-function ItemEditSection({
-  item,
-  editable,
-  onSuccess,
-  onError,
-  editForm,
-  setEditForm,
-}: {
+/* ─── Edit form ─── */
+function ItemEditForm({ item, onSave, onCancel, onError }: {
   item: ItemDto;
-  editable: boolean;
-  onSuccess: () => void;
-  onError: (err: unknown) => void;
-  editForm: boolean;
-  setEditForm: (v: boolean) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onError: (e: unknown) => void;
 }) {
   const queryClient = useQueryClient();
   const { register, handleSubmit } = useForm({
-    defaultValues: {
-      name_en: item.name_en ?? "",
-      name_ar: item.name_ar ?? "",
-      base_price: item.base_price,
-      status: item.status,
-    },
+    defaultValues: { name_en: item.name_en ?? "", name_ar: item.name_ar ?? "", base_price: item.base_price, status: item.status },
   });
-
-  const updateMut = useMutation({
+  const mut = useMutation({
     mutationFn: (body: Parameters<typeof updateItem>[1]) => updateItem(item.id, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] });
-      setEditForm(false);
-      onSuccess();
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["item", item.id] }); onSave(); },
     onError,
   });
-
-  const statusMut = useMutation({
-    mutationFn: (status: "active" | "hidden" | "out_of_stock") =>
-      updateItemStatus(item.id, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] });
-      onSuccess();
-    },
-    onError,
-  });
-
-  if (!editable) {
-    return (
-      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
-        <p className="text-zinc-600">{item.name_en ?? item.name_ar}</p>
-        <p className="font-semibold text-teal-600">{item.base_price.toFixed(2)} EGP</p>
-        <p className="text-sm text-zinc-500">Status: {item.status}</p>
-      </div>
-    );
-  }
-
-  if (!editForm) {
-    return (
-      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-medium text-zinc-800">{item.name_en ?? item.name_ar}</p>
-            <p className="text-teal-600">{item.base_price.toFixed(2)} EGP</p>
-            <span className={`rounded px-2 py-0.5 text-xs ${item.status === "active" ? "bg-green-100 text-green-800" : "bg-zinc-100 text-zinc-600"}`}>
-              {item.status}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setEditForm(true)}
-              className="rounded-lg text-zinc-700 border border-zinc-300 px-3 py-1.5 text-sm font-medium"
-            >
-              Edit
-            </button>
-            {item.status !== "active" && (
-              <button
-                type="button"
-                onClick={() => statusMut.mutate("active")}
-                className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white"
-              >
-                Set active
-              </button>
-            )}
-            {item.status === "active" && (
-              <button
-                type="button"
-                onClick={() => statusMut.mutate("out_of_stock")}
-                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white"
-              >
-                Out of stock
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <form
-      onSubmit={handleSubmit((d) =>
-        updateMut.mutate({
-          name_en: d.name_en,
-          name_ar: d.name_ar,
-          base_price: Number(d.base_price),
-          status: d.status as "active" | "hidden" | "out_of_stock",
-        })
-      )}
-      className="mb-6 rounded-xl border border-zinc-200 bg-white p-4"
-    >
-      <h3 className="mb-3 font-medium text-zinc-800">Edit item</h3>
-      <div className="grid gap-3 sm:grid-cols-2">
+    <form onSubmit={handleSubmit((d) => mut.mutate({ name_en: d.name_en, name_ar: d.name_ar, base_price: Number(d.base_price), status: d.status as "active" | "hidden" | "out_of_stock" }))}>
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-sm text-zinc-600">Name (EN)</label>
-          <input className="w-full text-zinc-700 rounded border border-zinc-300 px-3 py-2 text-sm" {...register("name_en")} />
+          <label className="label">Name (EN)</label>
+          <input className="input-base" {...register("name_en")} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-zinc-600">Name (AR)</label>
-          <input className="w-full text-zinc-700 rounded border border-zinc-300 px-3 py-2 text-sm" {...register("name_ar")} />
+          <label className="label">Name (AR)</label>
+          <input className="input-base" dir="rtl" {...register("name_ar")} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-zinc-600">Base price</label>
-          <input type="number" step="0.01" className="w-full text-zinc-700 rounded border border-zinc-300 px-3 py-2 text-sm" {...register("base_price", { valueAsNumber: true })} />
+          <label className="label">Base price (EGP)</label>
+          <input type="number" step="0.01" min="0" className="input-base" {...register("base_price", { valueAsNumber: true })} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-zinc-600">Status</label>
-          <select className="w-full text-zinc-700 rounded border border-zinc-300 px-3 py-2 text-sm" {...register("status")}>
+          <label className="label">Status</label>
+          <select className="input-base" {...register("status")}>
             <option value="active">Active</option>
             <option value="hidden">Hidden</option>
             <option value="out_of_stock">Out of stock</option>
           </select>
         </div>
       </div>
-      <div className="mt-3 flex gap-2">
-        <button type="submit" disabled={updateMut.isPending} className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
-          Save
+      <div className="mt-4 flex gap-2">
+        <button type="submit" disabled={mut.isPending} className="btn-primary btn-sm">
+          {mut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
         </button>
-        <button type="button" onClick={() => setEditForm(false)} className="text-zinc-700 rounded border border-zinc-300 px-3 py-1.5 text-sm">
-          Cancel
-        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary btn-sm">Cancel</button>
       </div>
     </form>
   );
 }
 
-/* ─── Variants ─── */
-
-function VariantsSection({
-  itemId,
-  editable,
-  onSuccess,
-  onError,
-  addVariant,
-  setAddVariant,
-}: {
-  itemId: string;
-  editable: boolean;
-  onSuccess: () => void;
-  onError: (err: unknown) => void;
-  addVariant: boolean;
-  setAddVariant: (v: boolean) => void;
+/* ─── Variants card ─── */
+function VariantsCard({ itemId, editable, addVariant, setAddVariant, onToast }: {
+  itemId: string; editable: boolean;
+  addVariant: boolean; setAddVariant: (v: boolean) => void;
+  onToast: (t: "ok"|"err", m: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const { data: variants, isLoading } = useQuery({
     queryKey: ["itemVariants", itemId],
     queryFn: () => fetchItemVariants(itemId),
@@ -346,276 +266,303 @@ function VariantsSection({
   });
 
   const createMut = useMutation({
-    mutationFn: (body: { name_ar: string; name_en: string; price: number }) =>
-      createVariant(itemId, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemVariants", itemId] });
-      queryClient.invalidateQueries({ queryKey: ["item", itemId] });
-      setAddVariant(false);
-      onSuccess();
-    },
-    onError,
+    mutationFn: (body: { name_ar: string; name_en: string; price: number }) => createVariant(itemId, body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["itemVariants", itemId] }); setAddVariant(false); onToast("ok", "Variant added."); },
+    onError: (e) => onToast("err", getApiError(e)),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<{ name_en: string; name_ar: string; price: number }> }) => updateVariant(id, body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["itemVariants", itemId] }); setEditingId(null); onToast("ok", "Variant updated."); },
+    onError: (e) => onToast("err", getApiError(e)),
   });
 
   const deleteMut = useMutation({
     mutationFn: deleteVariant,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemVariants", itemId] });
-      queryClient.invalidateQueries({ queryKey: ["item", itemId] });
-      onSuccess();
-    },
-    onError,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["itemVariants", itemId] }); onToast("ok", "Variant deleted."); },
+    onError: (e) => onToast("err", getApiError(e)),
   });
 
   return (
-    <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
-      <h3 className="mb-3 font-medium text-zinc-800">Variants</h3>
+    <div className="form-card">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Tag className="h-4 w-4 text-slate-400" />
+          <h2 className="section-title">Variants</h2>
+          <span className="badge badge-neutral">{variants?.length ?? 0}</span>
+        </div>
+        {editable && !addVariant && (
+          <button type="button" onClick={() => setAddVariant(true)} className="btn-primary btn-sm">
+            <Plus className="h-3.5 w-3.5" /> Add variant
+          </button>
+        )}
+      </div>
+      <p className="mb-4 text-xs text-slate-500">Use variants for sizes or versions (e.g. Small, Large). If no variants, the base price applies.</p>
+
+      {addVariant && (
+        <VariantForm
+          onSubmit={(b) => createMut.mutate(b)}
+          onCancel={() => setAddVariant(false)}
+          isPending={createMut.isPending}
+        />
+      )}
+
       {isLoading ? (
         <Loader2 className="h-5 w-5 animate-spin text-teal-600" />
+      ) : !variants || variants.length === 0 ? (
+        <p className="text-sm text-slate-400 italic">No variants — item uses base price.</p>
       ) : (
-        <ul className="space-y-2">
-          {(variants ?? []).map((v) => (
-            <li key={v.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2">
-              <span className="text-zinc-700">{v.name_en ?? v.name_ar}</span>
-              <span className="font-medium text-zinc-700">{v.price.toFixed(2)} EGP</span>
-              {editable && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm("Delete this variant?")) deleteMut.mutate(v.id);
-                  }}
-                  className="text-sm text-red-600 hover:underline"
-                >
-                  Delete
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {editable && (
-        <>
-          {!addVariant ? (
-            <button
-              type="button"
-              onClick={() => setAddVariant(true)}
-              className="mt-3 flex items-center gap-1 text-sm font-medium text-teal-600 hover:underline"
-            >
-              <Plus className="h-4 w-4" />
-              Add variant
-            </button>
-          ) : (
-            <AddVariantForm
-              onSubmit={(body) => createMut.mutate(body)}
-              onCancel={() => setAddVariant(false)}
-              isPending={createMut.isPending}
-            />
-          )}
-        </>
+        <div className="card overflow-hidden">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Variant</th>
+                <th>Price</th>
+                {editable && <th className="text-right">Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((v) => (
+                <tr key={v.id}>
+                  {editingId === v.id ? (
+                    <td colSpan={editable ? 3 : 2} className="p-0">
+                      <div className="px-4 py-3 bg-slate-50">
+                        <VariantForm
+                          defaultValues={{ name_en: v.name_en ?? "", name_ar: v.name_ar ?? "", price: v.price }}
+                          onSubmit={(b) => updateMut.mutate({ id: v.id, body: b })}
+                          onCancel={() => setEditingId(null)}
+                          isPending={updateMut.isPending}
+                        />
+                      </div>
+                    </td>
+                  ) : (
+                    <>
+                      <td>
+                        <span className="font-medium text-slate-700">{v.name_en ?? v.name_ar}</span>
+                        {v.name_ar && v.name_en && <span className="ml-2 text-xs text-slate-400" dir="rtl">{v.name_ar}</span>}
+                      </td>
+                      <td className="font-semibold text-teal-700">{v.price.toFixed(2)} EGP</td>
+                      {editable && (
+                        <td className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button type="button" onClick={() => setEditingId(v.id)} className="btn-ghost p-1.5">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button"
+                              onClick={() => { if (confirm("Delete this variant?")) deleteMut.mutate(v.id); }}
+                              className="btn-ghost p-1.5 text-red-500 hover:bg-red-50">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
-function AddVariantForm({
-  onSubmit,
-  onCancel,
-  isPending,
-}: {
-  onSubmit: (body: { name_ar: string; name_en: string; price: number }) => void;
+function VariantForm({ defaultValues, onSubmit, onCancel, isPending }: {
+  defaultValues?: { name_en?: string; name_ar?: string; price?: number };
+  onSubmit: (b: { name_en: string; name_ar: string; price: number }) => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
-  const { register, handleSubmit } = useForm<{ name_ar: string; name_en: string; price: number }>();
+  const { register, handleSubmit } = useForm<{ name_en: string; name_ar: string; price: number }>({
+    defaultValues: { name_en: defaultValues?.name_en ?? "", name_ar: defaultValues?.name_ar ?? "", price: defaultValues?.price ?? 0 },
+  });
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-teal-50 p-3">
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Name (EN) *</label>
-        <input className="w-32 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("name_en", { required: true })} />
+    <form onSubmit={handleSubmit((d) => onSubmit({ name_en: d.name_en, name_ar: d.name_ar, price: Number(d.price) }))}
+      className="flex flex-wrap items-end gap-3">
+      <div className="flex-1 min-w-28">
+        <label className="label text-xs">Name (EN) *</label>
+        <input className="input-base" placeholder="e.g. Large" {...register("name_en", { required: true })} />
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Name (AR)</label>
-        <input className="w-32 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("name_ar")} />
+      <div className="flex-1 min-w-28">
+        <label className="label text-xs">Name (AR)</label>
+        <input className="input-base" dir="rtl" placeholder="كبير" {...register("name_ar")} />
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Price *</label>
-        <input type="number" step="0.01" className="w-24 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("price", { valueAsNumber: true })} />
+      <div className="w-28">
+        <label className="label text-xs">Price (EGP) *</label>
+        <input type="number" step="0.01" min="0" className="input-base" {...register("price", { valueAsNumber: true })} />
       </div>
-      <button type="submit" disabled={isPending} className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
-        Add
-      </button>
-      <button type="button" onClick={onCancel} className="text-zinc-700 rounded border border-zinc-300 px-3 py-1.5 text-sm">
-        Cancel
-      </button>
+      <div className="flex gap-2 pb-0.5">
+        <button type="submit" disabled={isPending} className="btn-primary btn-sm">
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary btn-sm">Cancel</button>
+      </div>
     </form>
   );
 }
 
-/* ─── Modifier groups ─── */
-
-function ItemModifierGroupsSection({
-  itemId,
-  itemModifierGroups,
-  editable,
-  onSuccess,
-  onError,
-  addModifierGroup,
-  setAddModifierGroup,
-  modifierGroups,
-}: {
+/* ─── Modifier groups card ─── */
+function ModifierGroupsCard({ itemId, links, allGroups, editable, addModGrp, setAddModGrp, onToast }: {
   itemId: string;
-  itemModifierGroups: ItemModifierGroupLinkDto[];
+  links: ItemModifierGroupLinkDto[];
+  allGroups: ModifierGroupDto[];
   editable: boolean;
-  onSuccess: () => void;
-  onError: (err: unknown) => void;
-  addModifierGroup: boolean;
-  setAddModifierGroup: (v: boolean) => void;
-  modifierGroups: ModifierGroupDto[];
+  addModGrp: boolean;
+  setAddModGrp: (v: boolean) => void;
+  onToast: (t: "ok"|"err", m: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
 
-  const invalidateAll = () => {
+  const inv = () => {
     queryClient.invalidateQueries({ queryKey: ["item", itemId] });
     queryClient.invalidateQueries({ queryKey: ["itemModifierGroups", itemId] });
   };
 
   const attachMut = useMutation({
-    mutationFn: (body: { modifier_group_id: string; min_select: number; max_select: number }) =>
-      attachModifierGroup(itemId, body),
-    onSuccess: () => {
-      invalidateAll();
-      setAddModifierGroup(false);
-      onSuccess();
-    },
-    onError,
+    mutationFn: (body: { modifier_group_id: string; min_select: number; max_select: number }) => attachModifierGroup(itemId, body),
+    onSuccess: () => { inv(); setAddModGrp(false); onToast("ok", "Modifier group attached."); },
+    onError: (e) => onToast("err", getApiError(e)),
   });
-
   const updateLinkMut = useMutation({
-    mutationFn: ({ groupId, body }: { groupId: string; body: { min_select: number; max_select: number } }) =>
-      updateItemModifierGroup(itemId, groupId, body),
-    onSuccess: () => {
-      invalidateAll();
-      setEditingLinkId(null);
-      onSuccess();
-    },
-    onError,
+    mutationFn: ({ groupId, body }: { groupId: string; body: { min_select: number; max_select: number } }) => updateItemModifierGroup(itemId, groupId, body),
+    onSuccess: () => { inv(); setEditingLinkId(null); onToast("ok", "Updated."); },
+    onError: (e) => onToast("err", getApiError(e)),
   });
-
   const detachMut = useMutation({
     mutationFn: (groupId: string) => detachModifierGroup(itemId, groupId),
-    onSuccess: () => {
-      invalidateAll();
-      onSuccess();
-    },
-    onError,
+    onSuccess: () => { inv(); onToast("ok", "Detached."); },
+    onError: (e) => onToast("err", getApiError(e)),
   });
 
-  const groupById = new Map(modifierGroups.map((g) => [g.id, g]));
-  const safeLinks = itemModifierGroups.filter((l) => l && l.modifier_group_id);
-  const availableGroups = modifierGroups.filter(
-    (g) => !safeLinks.some((l) => l.modifier_group_id === g.id)
-  );
+  const groupById = new Map(allGroups.map((g) => [g.id, g]));
+  const safeLinks = links.filter((l) => l?.modifier_group_id);
+  const available = allGroups.filter((g) => !safeLinks.some((l) => l.modifier_group_id === g.id));
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4">
-      <h3 className="mb-3 font-medium text-zinc-800">Modifier groups on this item</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        Attach modifier groups so customers can choose add-ons (e.g. extras, size). Create groups and modifiers under{" "}
+    <div className="form-card">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-slate-400" />
+          <h2 className="section-title">Modifier groups</h2>
+          <span className="badge badge-neutral">{safeLinks.length}</span>
+        </div>
+        {editable && !addModGrp && (
+          <button type="button" onClick={() => setAddModGrp(true)} className="btn-primary btn-sm">
+            <Plus className="h-3.5 w-3.5" /> Attach group
+          </button>
+        )}
+      </div>
+      <p className="mb-4 text-xs text-slate-500">
+        Attach modifier groups so customers can add extras (e.g. sauce, toppings).{" "}
         <Link href="/dashboard/menu/modifiers" className="font-medium text-teal-600 hover:underline">
-          Modifier groups
+          Manage groups →
         </Link>
-        .
       </p>
-      <ul className="space-y-2">
-        {safeLinks.map((link) => {
-          const group = groupById.get(link.modifier_group_id);
-          const name = group
-            ? (group.name_en ?? group.name_ar ?? group.id)
-            : (link.modifier_group_id ?? link.id ?? "Unknown").slice(0, 8) + "\u2026";
-          const isEditing = editingLinkId === link.id;
-          return (
-            <li key={link.id} className="rounded-lg bg-zinc-50 px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-zinc-800">{name}</span>
-                <span className="text-sm text-zinc-500">
-                  min {link.min_select} / max {link.max_select}
-                </span>
-                {editable && !isEditing && (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingLinkId(link.id)}
-                      className="text-sm text-teal-600 hover:underline"
-                    >
-                      Edit min/max
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm("Detach this modifier group from the item?")) detachMut.mutate(link.modifier_group_id);
-                      }}
-                      className="text-sm text-red-600 hover:underline"
-                    >
-                      Detach
-                    </button>
+
+      {addModGrp && (
+        <div className="mb-4 rounded-lg border border-teal-100 bg-teal-50 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-teal-800">Attach modifier group</h3>
+          {available.length === 0 ? (
+            <p className="text-sm text-amber-600">All groups are already attached. <Link href="/dashboard/menu/modifiers" className="underline">Create more groups.</Link></p>
+          ) : (
+            <AttachForm available={available} onAttach={(b) => attachMut.mutate(b)} onCancel={() => setAddModGrp(false)} isPending={attachMut.isPending} />
+          )}
+        </div>
+      )}
+
+      {safeLinks.length === 0 ? (
+        <p className="text-sm text-slate-400 italic">No modifier groups attached.</p>
+      ) : (
+        <div className="card overflow-hidden divide-y divide-slate-100">
+          {safeLinks.map((link) => {
+            const group = groupById.get(link.modifier_group_id);
+            const name = group ? (group.name_en ?? group.name_ar ?? group.id) : link.modifier_group_id?.slice(0, 8) + "…";
+            return (
+              <div key={link.id} className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50">
+                    <Layers className="h-4 w-4 text-violet-500" />
+                  </div>
+                  <span className="flex-1 font-medium text-slate-800">{name}</span>
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs">min {link.min_select}</span>
+                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs">max {link.max_select}</span>
+                  </div>
+                  {editable && !editingLinkId && (
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => setEditingLinkId(link.id)} className="btn-ghost p-1.5" title="Edit min/max">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button type="button"
+                        onClick={() => { if (confirm("Detach this modifier group?")) detachMut.mutate(link.modifier_group_id); }}
+                        className="btn-ghost p-1.5 text-red-500 hover:bg-red-50">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {editingLinkId === link.id && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <MinMaxForm
+                      min={link.min_select}
+                      max={link.max_select}
+                      onSave={(min, max) => updateLinkMut.mutate({ groupId: link.modifier_group_id, body: { min_select: min, max_select: max } })}
+                      onCancel={() => setEditingLinkId(null)}
+                      isPending={updateLinkMut.isPending}
+                    />
                   </div>
                 )}
               </div>
-              {isEditing && (
-                <EditMinMaxForm
-                  min={link.min_select}
-                  max={link.max_select}
-                  onSave={(min, max) => updateLinkMut.mutate({ groupId: link.modifier_group_id, body: { min_select: min, max_select: max } })}
-                  onCancel={() => setEditingLinkId(null)}
-                  isPending={updateLinkMut.isPending}
-                />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {editable && (
-        <>
-          {!addModifierGroup ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setAddModifierGroup(true)}
-                className="flex items-center gap-1 text-sm font-medium text-teal-600 hover:underline"
-              >
-                <Plus className="h-4 w-4" />
-                Add modifier group to item
-              </button>
-              {modifierGroups.length === 0 && (
-                <Link href="/dashboard/menu/modifiers" className="text-sm text-zinc-500 hover:text-teal-600">
-                  Create modifier groups first &rarr;
-                </Link>
-              )}
-            </div>
-          ) : (
-            <AttachModifierGroupForm
-              availableGroups={availableGroups}
-              onAttach={(body) => attachMut.mutate(body)}
-              onCancel={() => setAddModifierGroup(false)}
-              isPending={attachMut.isPending}
-            />
-          )}
-        </>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
-function EditMinMaxForm({
-  min,
-  max,
-  onSave,
-  onCancel,
-  isPending,
-}: {
-  min: number;
-  max: number;
+function AttachForm({ available, onAttach, onCancel, isPending }: {
+  available: ModifierGroupDto[];
+  onAttach: (b: { modifier_group_id: string; min_select: number; max_select: number }) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const { register, handleSubmit } = useForm<{ modifier_group_id: string; min_select: number; max_select: number }>({
+    defaultValues: { min_select: 0, max_select: 1 },
+  });
+  return (
+    <form onSubmit={handleSubmit(onAttach)} className="flex flex-wrap items-end gap-3">
+      <div className="flex-1 min-w-36">
+        <label className="label text-xs">Modifier group</label>
+        <select className="input-base" {...register("modifier_group_id", { required: true })}>
+          <option value="">Select group…</option>
+          {available.map((g) => (
+            <option key={g.id} value={g.id}>{g.name_en ?? g.name_ar ?? g.id}</option>
+          ))}
+        </select>
+      </div>
+      <div className="w-20">
+        <label className="label text-xs">Min select</label>
+        <input type="number" min={0} className="input-base" {...register("min_select", { valueAsNumber: true })} />
+      </div>
+      <div className="w-20">
+        <label className="label text-xs">Max select</label>
+        <input type="number" min={0} className="input-base" {...register("max_select", { valueAsNumber: true })} />
+      </div>
+      <div className="flex gap-2 pb-0.5">
+        <button type="submit" disabled={isPending} className="btn-primary btn-sm">
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Attach
+        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary btn-sm">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function MinMaxForm({ min, max, onSave, onCancel, isPending }: {
+  min: number; max: number;
   onSave: (min: number, max: number) => void;
   onCancel: () => void;
   isPending: boolean;
@@ -624,75 +571,21 @@ function EditMinMaxForm({
     defaultValues: { min_select: min, max_select: max },
   });
   return (
-    <form
-      onSubmit={handleSubmit((d) => onSave(d.min_select, d.max_select))}
-      className="mt-2 flex flex-wrap items-end gap-2 border-t border-zinc-200 pt-2"
-    >
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Min select</label>
-        <input type="number" min={0} className="w-20 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("min_select", { valueAsNumber: true })} />
+    <form onSubmit={handleSubmit((d) => onSave(d.min_select, d.max_select))} className="flex flex-wrap items-end gap-3">
+      <div className="w-24">
+        <label className="label text-xs">Min select</label>
+        <input type="number" min={0} className="input-base" {...register("min_select", { valueAsNumber: true })} />
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Max select</label>
-        <input type="number" min={0} className="w-20 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("max_select", { valueAsNumber: true })} />
+      <div className="w-24">
+        <label className="label text-xs">Max select</label>
+        <input type="number" min={0} className="input-base" {...register("max_select", { valueAsNumber: true })} />
       </div>
-      <button type="submit" disabled={isPending} className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
-        Save
-      </button>
-      <button type="button" onClick={onCancel} className="text-zinc-700 rounded border border-zinc-300 px-3 py-1.5 text-sm">
-        Cancel
-      </button>
-    </form>
-  );
-}
-
-function AttachModifierGroupForm({
-  availableGroups,
-  onAttach,
-  onCancel,
-  isPending,
-}: {
-  availableGroups: ModifierGroupDto[];
-  onAttach: (body: { modifier_group_id: string; min_select: number; max_select: number }) => void;
-  onCancel: () => void;
-  isPending: boolean;
-}) {
-  const { register, handleSubmit } = useForm<{ modifier_group_id: string; min_select: number; max_select: number }>({
-    defaultValues: { min_select: 0, max_select: 1 },
-  });
-  return (
-    <form
-      onSubmit={handleSubmit(onAttach)}
-      className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-teal-50 p-3"
-    >
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Modifier group</label>
-        <select className="rounded border text-zinc-700 border-zinc-300 px-2 py-1.5 text-sm" {...register("modifier_group_id", { required: true })}>
-          <option value="">Select group&hellip;</option>
-          {availableGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name_en ?? g.name_ar ?? g.id}
-            </option>
-          ))}
-        </select>
+      <div className="flex gap-2 pb-0.5">
+        <button type="submit" disabled={isPending} className="btn-primary btn-sm">
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary btn-sm">Cancel</button>
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Min</label>
-        <input type="number" min={0} className="w-16 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("min_select", { valueAsNumber: true })} />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-600">Max</label>
-        <input type="number" min={0} className="w-16 text-zinc-700 rounded border border-zinc-300 px-2 py-1.5 text-sm" {...register("max_select", { valueAsNumber: true })} />
-      </div>
-      <button type="submit" disabled={isPending || availableGroups.length === 0} className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
-        Attach
-      </button>
-      <button type="button" onClick={onCancel} className="text-zinc-700 rounded border border-zinc-300 px-3 py-1.5 text-sm">
-        Cancel
-      </button>
-      {availableGroups.length === 0 && (
-        <p className="w-full text-sm text-amber-600">Create modifier groups first in Modifier groups.</p>
-      )}
     </form>
   );
 }

@@ -57,12 +57,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (name: string, password: string) => {
       const res = await authApi.login(name, password);
       setToken(res.access_token);
+      const userWithNames = {
+        ...res.user,
+        merchant_name: res.merchant_name,
+        branch_name: res.branch_name,
+      };
       setState({
-        user: res.user,
+        user: userWithNames,
         isLoading: false,
         isAuthenticated: true,
       });
-      router.push("/dashboard");
+      // انتظر تحديث الـ state قبل الانتقال عشان الـ dashboard يلاقي الـ user
+      queueMicrotask(() => router.push("/dashboard"));
     },
     [router]
   );

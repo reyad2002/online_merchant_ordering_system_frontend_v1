@@ -10,11 +10,15 @@ export interface User {
   role: UserRole;
   status: UserStatus;
   created_at: string;
+  merchant_name?: string;
+  branch_name?: string | null;
 }
 
 export interface LoginResponse {
   access_token: string;
   user: User;
+  merchant_name?: string;
+  branch_name?: string | null;
 }
 
 // Merchant

@@ -5,17 +5,24 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchPublicMenu } from "@/lib/api";
 import { useAuth, useCart } from "@/contexts";
 import Link from "next/link";
-import { ShoppingCart, Minus, Plus, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  ShoppingBag, Minus, Plus, Trash2, ChevronLeft, ArrowRight, Tag,
+} from "lucide-react";
 
 export default function CartPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const token = searchParams.get("t") ?? undefined;
   const tableCodeParam = searchParams.get("tableCode") ?? "";
-  const merchantIdParam = user?.merchant_id ?? searchParams.get("merchantId") ?? "";
+  const merchantIdParam =
+    user?.merchant_id != null
+      ? String(user.merchant_id)
+      : searchParams.get("merchantId") ?? "";
 
   const { data: menuData } = useQuery({
-    queryKey: token ? ["publicMenu", "token", token] : ["publicMenu", merchantIdParam, tableCodeParam],
+    queryKey: token
+      ? ["publicMenu", "token", token]
+      : ["publicMenu", merchantIdParam, tableCodeParam],
     queryFn: () =>
       token
         ? fetchPublicMenu(undefined, undefined, token)
@@ -37,24 +44,25 @@ export default function CartPage() {
     const price = entry.variant ? entry.variant.price : entry.item.base_price;
     const modTotal = entry.selectedModifiers.reduce(
       (s, m) => s + m.modifier.price * m.quantity,
-      0
+      0,
     );
     return sum + (price + modTotal) * entry.quantity;
   }, 0);
 
+  /* ─── Empty cart ─── */
   if (totalItems === 0) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]" style={{ backgroundColor: "#0d5c63" }}>
-        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white/20 text-white">
-          <ShoppingCart className="h-12 w-12" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-6 text-center">
+        <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-orange-100">
+          <ShoppingBag className="h-12 w-12 text-orange-400" />
         </div>
-        <h1 className="mt-6 text-center text-xl font-bold text-white">
-          Your cart is empty
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Your cart is empty</h1>
+        <p className="mt-2 text-sm text-gray-500">Add some items from the menu to get started.</p>
         <Link
           href={menuHref}
-          className="menu-btn-orange mt-6 rounded-2xl px-6 py-3 font-bold uppercase tracking-wide text-white"
+          className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-orange-500 px-6 py-3 font-semibold text-white hover:bg-orange-600 transition-colors"
         >
+          <ChevronLeft className="h-4 w-4" />
           Back to menu
         </Link>
       </div>
@@ -62,122 +70,166 @@ export default function CartPage() {
   }
 
   return (
-    <div className="min-h-screen pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]" style={{ backgroundColor: "#0d5c63" }}>
-      {/* Header with ORDER tab + back */}
-      <header className="sticky top-0 z-10 border-b border-white/20" style={{ backgroundColor: "#0d5c63" }}>
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
+    <div className="min-h-screen bg-gray-50 pb-40 pt-[env(safe-area-inset-top)]">
+
+      {/* ─── Header ─── */}
+      <header className="sticky top-0 z-10 border-b border-gray-100 bg-white shadow-sm">
+        <div className="mx-auto flex h-14 max-w-2xl items-center gap-3 px-4">
           <Link
             href={menuHref}
-            className="flex items-center gap-2 text-sm font-semibold text-white/90 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            aria-label="Back to menu"
           >
-            <ArrowLeft className="h-5 w-5" />
-            Menu
+            <ChevronLeft className="h-5 w-5" />
           </Link>
-          <span className="rounded-full px-4 py-1.5 text-sm font-bold uppercase tracking-wide text-white" style={{ backgroundColor: "#e85d04" }}>
-            Order
-          </span>
-          <span className="w-16" />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-bold text-gray-900">Your cart</h1>
+            <p className="text-xs text-gray-400">
+              {totalItems} item{totalItems !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-100">
+            <ShoppingBag className="h-4.5 w-4.5 text-orange-600" />
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6">
-        <ul className="space-y-3">
+      <main className="mx-auto max-w-2xl px-4 py-5">
+
+        {/* ─── Item rows ─── */}
+        <div className="space-y-3">
           {entries.map((entry, index) => {
-            const price = entry.variant
-              ? entry.variant.price
-              : entry.item.base_price;
+            const price = entry.variant ? entry.variant.price : entry.item.base_price;
             const modTotal = entry.selectedModifiers.reduce(
               (s, m) => s + m.modifier.price * m.quantity,
-              0
+              0,
             );
             const lineTotal = (price + modTotal) * entry.quantity;
             const name = entry.item.name_en || entry.item.name_ar;
             const variantLabel = entry.variant
-              ? ` · ${entry.variant.name_en || entry.variant.name_ar}`
-              : "";
+              ? `${entry.variant.name_en || entry.variant.name_ar}`
+              : null;
             const addOns =
               entry.selectedModifiers.length > 0
-                ? entry.selectedModifiers
-                    .map(
-                      (m) =>
-                        `${m.modifier.name_en || m.modifier.name_ar}${m.quantity > 1 ? ` ×${m.quantity}` : ""}`
-                    )
-                    .join(", ")
+                ? entry.selectedModifiers.map(
+                    (m) =>
+                      `${m.modifier.name_en || m.modifier.name_ar}${m.quantity > 1 ? ` ×${m.quantity}` : ""}`,
+                  )
                 : null;
 
             return (
-              <li
+              <div
                 key={`${index}-${entry.item.id}-${entry.variant?.id}`}
-                className="rounded-2xl bg-white/10 p-4 text-white"
+                className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  {/* Item details */}
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold">
-                      {name}
-                      {variantLabel}
-                    </p>
-                    {addOns && (
-                      <p className="mt-1 text-sm text-white/80">+ {addOns}</p>
+                    <p className="font-semibold text-gray-900 leading-snug">{name}</p>
+                    {variantLabel && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
+                        <Tag className="h-3 w-3" />
+                        {variantLabel}
+                      </p>
                     )}
-                    <p className="mt-1.5 font-semibold text-[#ffedd5]">
-                      {lineTotal.toFixed(2)} {currency}
-                    </p>
+                    {addOns && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {addOns.map((a, i) => (
+                          <span
+                            key={i}
+                            className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700"
+                          >
+                            + {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <div className="flex items-center rounded-xl bg-white/20 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateQuantity(index, entry.quantity - 1)
-                        }
-                        className="flex h-9 w-9 items-center justify-center text-white hover:bg-white/20"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <span className="w-8 text-center text-sm font-semibold">
-                        {entry.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateQuantity(index, entry.quantity + 1)
-                        }
-                        className="flex h-9 w-9 items-center justify-center text-white hover:bg-white/20"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
+
+                  {/* Delete */}
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-300 hover:bg-red-50 hover:text-red-400 transition-colors"
+                    aria-label="Remove item"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Bottom row: qty stepper + price */}
+                <div className="mt-3.5 flex items-center justify-between">
+                  <div className="flex items-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                     <button
                       type="button"
-                      onClick={() => removeItem(index)}
-                      className="rounded-lg p-2 text-red-300 hover:bg-white/10 hover:text-red-200"
-                      aria-label="Remove"
+                      onClick={() => updateQuantity(index, entry.quantity - 1)}
+                      className="flex h-9 w-9 items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="w-10 text-center text-sm font-bold text-gray-900">
+                      {entry.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateQuantity(index, entry.quantity + 1)}
+                      className="flex h-9 w-9 items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
                     </button>
                   </div>
+
+                  <p className="text-base font-bold text-gray-900">
+                    {lineTotal.toFixed(2)}{" "}
+                    <span className="text-xs font-medium text-gray-400">{currency}</span>
+                  </p>
                 </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
 
-        <div className="mt-8 rounded-2xl border border-white/20 bg-white/5 p-6">
-          <div className="mb-4 flex items-center justify-between text-white">
-            <span className="text-lg font-bold">Total</span>
-            <span className="text-xl font-bold text-[#ffedd5]">
+        {/* ─── Order summary ─── */}
+        <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 font-bold text-gray-900">Order summary</h2>
+          <div className="space-y-2.5 text-sm">
+            <div className="flex items-center justify-between text-gray-600">
+              <span>
+                Subtotal ({totalItems} item{totalItems !== 1 ? "s" : ""})
+              </span>
+              <span className="font-semibold text-gray-900">
+                {subtotal.toFixed(2)} {currency}
+              </span>
+            </div>
+            <div className="h-px bg-gray-100" />
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-gray-900">Total</span>
+              <span className="text-lg font-bold text-orange-500">
+                {subtotal.toFixed(2)} {currency}
+              </span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* ─── Sticky checkout bar ─── */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-100 bg-white px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="text-gray-500">Total</span>
+            <span className="font-bold text-gray-900">
               {subtotal.toFixed(2)} {currency}
             </span>
           </div>
           <Link
             href={checkoutHref}
-            className="menu-btn-orange flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 font-bold uppercase tracking-wide"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 font-bold text-white hover:bg-orange-600 transition-colors"
           >
             Proceed to checkout
-            <ChevronRight className="h-5 w-5" />
+            <ArrowRight className="h-4.5 w-4.5" />
           </Link>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
