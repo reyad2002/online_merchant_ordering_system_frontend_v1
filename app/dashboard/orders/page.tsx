@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts";
 import { fetchOrders, updateOrderStatus, getApiError } from "@/lib/api";
 import type { OrderStatus } from "@/lib/types";
+import { useOrderCreated } from "@/hooks/useOrderCreated";
 import {
   ClipboardList,
   ChevronRight,
@@ -18,29 +19,39 @@ import Link from "next/link";
 import { useState } from "react";
 
 const statusLabels: Record<OrderStatus, string> = {
-  draft:      "Draft",
-  placed:     "Placed",
-  accepted:   "Accepted",
-  preparing:  "Preparing",
-  ready:      "Ready",
-  completed:  "Completed",
-  cancelled:  "Cancelled",
+  draft: "Draft",
+  placed: "Placed",
+  accepted: "Accepted",
+  preparing: "Preparing",
+  ready: "Ready",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 const statusBadge: Record<OrderStatus, string> = {
-  draft:      "badge badge-neutral",
-  placed:     "badge badge-info",
-  accepted:   "badge badge-teal",
-  preparing:  "badge badge-warning",
-  ready:      "badge bg-blue-100 text-blue-700",
-  completed:  "badge badge-success",
-  cancelled:  "badge badge-error",
+  draft: "badge badge-neutral",
+  placed: "badge badge-info",
+  accepted: "badge badge-teal",
+  preparing: "badge badge-warning",
+  ready: "badge bg-blue-100 text-blue-700",
+  completed: "badge badge-success",
+  cancelled: "badge badge-error",
 };
 
 export default function DashboardOrdersPage() {
   const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [newOrderToast, setNewOrderToast] = useState<{ order_number: string } | null>(null);
   const queryClient = useQueryClient();
+
+  useOrderCreated(
+    (data) => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      setNewOrderToast({ order_number: data.order_number });
+      setTimeout(() => setNewOrderToast(null), 4000);
+    },
+    { branchId: user?.branch_id != null ? String(user.branch_id) : undefined }
+  );
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["orders", user?.merchant_id, user?.branch_id, statusFilter],
@@ -54,8 +65,13 @@ export default function DashboardOrdersPage() {
   });
 
   const updateStatus = useMutation({
-    mutationFn: ({ orderId, status }: { orderId: string; status: OrderStatus }) =>
-      updateOrderStatus(orderId, status),
+    mutationFn: ({
+      orderId,
+      status,
+    }: {
+      orderId: string;
+      status: OrderStatus;
+    }) => updateOrderStatus(orderId, status),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["orders"] }),
   });
 
@@ -76,6 +92,18 @@ export default function DashboardOrdersPage() {
 
   return (
     <div className="space-y-5">
+      {newOrderToast && (
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 shadow-lg">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-500 text-white">
+            <CheckCircle2 className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <p className="font-semibold text-teal-800">New order</p>
+            <p className="text-sm font-mono text-teal-600">#{newOrderToast.order_number}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -94,7 +122,9 @@ export default function DashboardOrdersPage() {
           >
             <option value="">All statuses</option>
             {(Object.keys(statusLabels) as OrderStatus[]).map((s) => (
-              <option key={s} value={s}>{statusLabels[s]}</option>
+              <option key={s} value={s}>
+                {statusLabels[s]}
+              </option>
             ))}
           </select>
         </div>
@@ -108,7 +138,9 @@ export default function DashboardOrdersPage() {
           </div>
           <p className="font-medium text-slate-700">No orders found</p>
           <p className="mt-1 text-sm text-slate-400">
-            {statusFilter ? `No orders with status "${statusLabels[statusFilter as OrderStatus]}"` : "Orders will appear here once placed."}
+            {statusFilter
+              ? `No orders with status "${statusLabels[statusFilter as OrderStatus]}"`
+              : "Orders will appear here once placed."}
           </p>
         </div>
       ) : (
@@ -150,13 +182,17 @@ export default function DashboardOrdersPage() {
                     {/* Customer */}
                     <td className="hidden sm:table-cell">
                       <span className="text-slate-600">
-                        {order.customer_name ?? <span className="text-slate-400 italic">Guest</span>}
+                        {order.customer_name ?? (
+                          <span className="text-slate-400 italic">Guest</span>
+                        )}
                       </span>
                     </td>
 
                     {/* Type */}
                     <td className="hidden md:table-cell">
-                      <span className="capitalize text-slate-500">{order.order_type ?? "—"}</span>
+                      <span className="capitalize text-slate-500">
+                        {order.order_type ?? "—"}
+                      </span>
                     </td>
 
                     {/* Date */}
@@ -183,7 +219,12 @@ export default function DashboardOrdersPage() {
                         {order.status === "placed" && (
                           <button
                             type="button"
-                            onClick={() => updateStatus.mutate({ orderId: order.id, status: "accepted" })}
+                            onClick={() =>
+                              updateStatus.mutate({
+                                orderId: order.id,
+                                status: "accepted",
+                              })
+                            }
                             disabled={updateStatus.isPending}
                             className="flex h-8 items-center gap-1 rounded-lg bg-teal-600 px-2.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
                             title="Accept order"
@@ -195,7 +236,12 @@ export default function DashboardOrdersPage() {
                         {order.status === "accepted" && (
                           <button
                             type="button"
-                            onClick={() => updateStatus.mutate({ orderId: order.id, status: "preparing" })}
+                            onClick={() =>
+                              updateStatus.mutate({
+                                orderId: order.id,
+                                status: "preparing",
+                              })
+                            }
                             disabled={updateStatus.isPending}
                             className="flex h-8 items-center gap-1 rounded-lg bg-amber-500 px-2.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
                             title="Start preparing"
@@ -207,7 +253,12 @@ export default function DashboardOrdersPage() {
                         {order.status === "preparing" && (
                           <button
                             type="button"
-                            onClick={() => updateStatus.mutate({ orderId: order.id, status: "ready" })}
+                            onClick={() =>
+                              updateStatus.mutate({
+                                orderId: order.id,
+                                status: "ready",
+                              })
+                            }
                             disabled={updateStatus.isPending}
                             className="flex h-8 items-center gap-1 rounded-lg bg-sky-600 px-2.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50 transition-colors"
                             title="Mark ready"
@@ -218,7 +269,12 @@ export default function DashboardOrdersPage() {
                         {order.status === "ready" && (
                           <button
                             type="button"
-                            onClick={() => updateStatus.mutate({ orderId: order.id, status: "completed" })}
+                            onClick={() =>
+                              updateStatus.mutate({
+                                orderId: order.id,
+                                status: "completed",
+                              })
+                            }
                             disabled={updateStatus.isPending}
                             className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                             title="Complete"
@@ -227,10 +283,17 @@ export default function DashboardOrdersPage() {
                             <span className="hidden sm:inline">Complete</span>
                           </button>
                         )}
-                        {["placed", "accepted", "preparing"].includes(order.status) && (
+                        {["placed", "accepted", "preparing"].includes(
+                          order.status,
+                        ) && (
                           <button
                             type="button"
-                            onClick={() => updateStatus.mutate({ orderId: order.id, status: "cancelled" })}
+                            onClick={() =>
+                              updateStatus.mutate({
+                                orderId: order.id,
+                                status: "cancelled",
+                              })
+                            }
                             disabled={updateStatus.isPending}
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50"
                             title="Cancel order"

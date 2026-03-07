@@ -40,6 +40,7 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+/** Cart is state-only (in-memory); no localStorage or API. Clears on refresh. */
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [entries, setEntries] = useState<CartEntry[]>([]);
 

@@ -3,18 +3,25 @@
 import * as React from "react";
 import Link from "next/link";
 import { useCart } from "@/contexts";
-import { X, Minus, Plus, Trash2, ShoppingBag, ArrowRight } from "lucide-react";
+import { createOrder, getApiError } from "@/lib/api";
+import { X, Minus, Plus, Trash2, ShoppingBag, ArrowRight, Loader2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 interface CartDrawerProps {
   open: boolean;
   onClose: () => void;
   currency: string;
   cartLink: string;
-  checkoutLink: string;
 }
 
-export function CartDrawer({ open, onClose, currency, cartLink, checkoutLink }: CartDrawerProps) {
-  const { entries, updateQuantity, removeItem, totalItems } = useCart();
+export function CartDrawer({ open, onClose, currency, cartLink }: CartDrawerProps) {
+  const { entries, updateQuantity, removeItem, totalItems, lineItems, clearCart } = useCart();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("t") ?? undefined;
+
+  const [placing, setPlacing] = React.useState(false);
+  const [orderError, setOrderError] = React.useState<string | null>(null);
+  const [orderSuccess, setOrderSuccess] = React.useState<{ order_number: string } | null>(null);
 
   const subtotal = entries.reduce((sum, entry) => {
     const price = entry.variant ? entry.variant.price : entry.item.base_price;
@@ -25,8 +32,25 @@ export function CartDrawer({ open, onClose, currency, cartLink, checkoutLink }: 
     return sum + (price + modTotal) * entry.quantity;
   }, 0);
 
-  if (!open) return null;
+  const handlePlaceOrder = async () => {
+    if (!token || lineItems.length === 0) return;
+    setOrderError(null);
+    setPlacing(true);
+    try {
+      const res = await createOrder(token, lineItems);
+      setOrderSuccess({ order_number: res.order_number });
+      clearCart();
+      onClose();
+    } catch (err) {
+      setOrderError(getApiError(err));
+    } finally {
+      setPlacing(false);
+    }
+  };
 
+  const canPlaceOrder = !!token && lineItems.length > 0;
+
+  if (!open) return null;
   return (
     <>
       <div
@@ -167,7 +191,11 @@ export function CartDrawer({ open, onClose, currency, cartLink, checkoutLink }: 
           {/* Footer */}
           {totalItems > 0 && (
             <div className="shrink-0 border-t border-gray-100 bg-white px-5 pt-4 pb-3">
-              {/* Subtotal row */}
+              {orderError && (
+                <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {orderError}
+                </p>
+              )}
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-sm text-gray-500">Subtotal</span>
                 <span className="text-lg font-bold text-gray-900">
@@ -176,22 +204,31 @@ export function CartDrawer({ open, onClose, currency, cartLink, checkoutLink }: 
                 </span>
               </div>
 
-              {/* Actions */}
-              <Link
-                href={checkoutLink}
-                onClick={onClose}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 font-bold text-white hover:bg-orange-600 transition-colors"
+              <button
+                type="button"
+                disabled={!canPlaceOrder || placing}
+                onClick={handlePlaceOrder}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 font-bold text-white hover:bg-orange-600 disabled:opacity-50 transition-colors"
               >
-                Checkout
-                <ArrowRight className="h-4.5 w-4.5" />
-              </Link>
-              <Link
+                {placing ? (
+                  <>
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                    Placing order…
+                  </>
+                ) : (
+                  <>
+                    Place order
+                    <ArrowRight className="h-4.5 w-4.5" />
+                  </>
+                )}
+              </button>
+              {/* <Link
                 href={cartLink}
                 onClick={onClose}
                 className="mt-2 block text-center text-sm text-gray-400 hover:text-gray-600 transition-colors"
               >
                 View full cart
-              </Link>
+              </Link> */}
             </div>
           )}
         </div>

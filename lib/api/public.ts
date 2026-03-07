@@ -1,9 +1,8 @@
 import { apiClient, getApiError } from "./client";
 import type {
   PublicMenuResponse,
-  ValidateCartRequest,
-  CreateOrderRequest,
   CreateOrderResponse,
+  CartLineItem,
 } from "@/lib/types";
 
 /**
@@ -83,33 +82,56 @@ export async function fetchPublicMenuById(
   return data;
 } 
 
-export interface ValidateCartResult {
-  is_valid: boolean;
-  errors: string[];
-  totals: { subtotal: number; total: number };
-  line_items: Array<{
+/**
+ * Request body for POST /orders.
+ * - item_id: string
+ * - variant_id: only when present (omit when no variant)
+ * - quantity: number
+ * - modifiers: array of { modifier_id, quantity }
+ */
+export type CreateOrderRequestBody = {
+  items: Array<{
     item_id: string;
-    variant_id: string | null;
-    unit_price: number;
-    qty: number;
-    line_total: number;
+    variant_id?: string;
+    quantity: number;
+    modifiers: Array<{ modifier_id: string; quantity: number }>;
   }>;
+};
+
+function buildCreateOrderBody(lineItems: CartLineItem[]): CreateOrderRequestBody {
+  return {
+    items: lineItems.map((line) => {
+      const item: CreateOrderRequestBody["items"][0] = {
+        item_id: String(line.item_id),
+        quantity: line.quantity,
+        modifiers: line.modifiers.map((m) => ({
+          modifier_id: String(m.modifier_id),
+          quantity: m.quantity,
+        })),
+      };
+      if (line.variant_id != null && line.variant_id !== "") {
+        item.variant_id = String(line.variant_id);
+      }
+      return item;
+    }),
+  };
 }
 
-export async function validateCart(
-  body: ValidateCartRequest,
-): Promise<ValidateCartResult> {
-  const { data } = await apiClient.post<ValidateCartResult>(
-    "/public/cart/validate",
-    body,
-  );
-  return data;
-}
-
+/**
+ * Create order using table token (from QR scan).
+ * POST /orders?t=TOKEN with body { items: [...] }.
+ * Backend validates token and extracts merchant_id, branch_id, table_id from JWT.
+ */
 export async function createOrder(
-  body: CreateOrderRequest,
+  token: string,
+  items: CartLineItem[],
 ): Promise<CreateOrderResponse> {
-  const { data } = await apiClient.post<CreateOrderResponse>("/orders", body);
+  const body = buildCreateOrderBody(items);
+  const { data } = await apiClient.post<CreateOrderResponse>(
+    "/orders",
+    body,
+    { params: { t: token } },
+  );
   return data;
 }
 
